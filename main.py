@@ -42,7 +42,7 @@ def process_file():
         df = df.dropna()
 
         # Replace with your actual project/dataset/table
-        table_id = "YOUR_PROJECT_ID.demo_dataset.demo_table"
+        table_id = "qwiklabs-gcp-04-99a2b556d735.demo_dataset.demo_table"
 
         # Load to BigQuery
         job = bq_client.load_table_from_dataframe(df, table_id)
