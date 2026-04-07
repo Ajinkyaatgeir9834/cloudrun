@@ -3,10 +3,12 @@ from google.cloud import storage
 from google.cloud import bigquery
 import pandas as pd
 import os
+import base64
+import json
 
 app = Flask(__name__)
 
-# Health check (required for Cloud Run)
+# Health check
 @app.route("/", methods=["GET"])
 def health():
     return "Service is running 🚀", 200
@@ -18,11 +20,19 @@ def process_file():
     try:
         data = request.get_json()
 
-        if not data or "bucket" not in data or "name" not in data:
-            return jsonify({"error": "Invalid request"}), 400
+        # 🔹 Decode Pub/Sub message
+        if not data or "message" not in data:
+            return jsonify({"error": "Invalid Pub/Sub message"}), 400
 
-        bucket_name = data["bucket"]
-        file_name = data["name"]
+        pubsub_message = base64.b64decode(data["message"]["data"]).decode("utf-8")
+        message_json = json.loads(pubsub_message)
+
+        bucket_name = message_json["bucket"]
+        file_name = message_json["name"]
+
+        # Only process CSV files
+        if not file_name.endswith(".csv"):
+            return jsonify({"status": "skipped", "reason": "Not a CSV file"}), 200
 
         # Initialize clients
         storage_client = storage.Client()
@@ -41,7 +51,6 @@ def process_file():
         # Basic cleaning
         df = df.dropna()
 
-        # Replace with your actual project/dataset/table
         table_id = "qwiklabs-gcp-04-99a2b556d735.demo_dataset.demo_table"
 
         # Load to BigQuery
@@ -50,6 +59,7 @@ def process_file():
 
         return jsonify({
             "status": "success",
+            "file": file_name,
             "rows_loaded": len(df)
         }), 200
 
@@ -60,7 +70,6 @@ def process_file():
         }), 500
 
 
-# Only needed if NOT using gunicorn (safe to keep)
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
