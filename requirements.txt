@@ -1,4 +1,6 @@
 flask
+gunicorn
 pandas
 google-cloud-storage
 google-cloud-bigquery
+pyarrow
