@@ -1,36 +1,66 @@
-from flask import Flask, request
+from flask import Flask, request, jsonify
 from google.cloud import storage
 from google.cloud import bigquery
 import pandas as pd
+import os
 
 app = Flask(__name__)
 
+# Health check (required for Cloud Run)
+@app.route("/", methods=["GET"])
+def health():
+    return "Service is running 🚀", 200
+
+
+# Main processing endpoint
 @app.route("/", methods=["POST"])
 def process_file():
-    data = request.get_json()
+    try:
+        data = request.get_json()
 
-    bucket_name = data['bucket']
-    file_name = data['name']
+        if not data or "bucket" not in data or "name" not in data:
+            return jsonify({"error": "Invalid request"}), 400
 
-    # Read from GCS
-    storage_client = storage.Client()
-    bucket = storage_client.bucket(bucket_name)
-    blob = bucket.blob(file_name)
+        bucket_name = data["bucket"]
+        file_name = data["name"]
 
-    file_path = f"/tmp/{file_name}"
-    blob.download_to_filename(file_path)
+        # Initialize clients
+        storage_client = storage.Client()
+        bq_client = bigquery.Client()
 
-    # Read CSV
-    df = pd.read_csv(file_path)
+        # Download file from GCS
+        bucket = storage_client.bucket(bucket_name)
+        blob = bucket.blob(file_name)
 
-    # Simple cleaning
-    df = df.dropna()
+        local_file = f"/tmp/{file_name}"
+        blob.download_to_filename(local_file)
 
-    # Load to BigQuery
-    bq_client = bigquery.Client()
-    table_id = "your_project.your_dataset.demo_table"
+        # Read CSV
+        df = pd.read_csv(local_file)
 
-    job = bq_client.load_table_from_dataframe(df, table_id)
-    job.result()
+        # Basic cleaning
+        df = df.dropna()
 
-    return "Loaded successfully", 200
+        # Replace with your actual project/dataset/table
+        table_id = "YOUR_PROJECT_ID.demo_dataset.demo_table"
+
+        # Load to BigQuery
+        job = bq_client.load_table_from_dataframe(df, table_id)
+        job.result()
+
+        return jsonify({
+            "status": "success",
+            "rows_loaded": len(df)
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
+# Only needed if NOT using gunicorn (safe to keep)
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
